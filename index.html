@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="在《锁门》基础上，从整站被复制、内部服务暴露公网和鉴权旁路等真实事故中补出的 8 条 VPS 安全规则。">
+  <meta name="theme-color" content="#f5f3ee">
+  <meta property="og:title" content="《锁门》之外：我们从事故里补出的 8 条规则">
+  <meta property="og:description" content="不重复基础教程，只写我们亲自踩过的雷，以及事故之后留下的规则。">
+  <meta property="og:type" content="article">
+  <title>《锁门》之外：我们从事故里补出的 8 条规则</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f5f3ee;
+      --card: #fffefa;
+      --ink: #22211f;
+      --muted: #6b6963;
+      --line: #dedbd3;
+      --accent: #345b53;
+      --accent-soft: #e4ece8;
+      --warning: #8b4f39;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: ui-serif, "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+      font-size: 18px;
+      line-height: 1.82;
+      text-rendering: optimizeLegibility;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+    }
+
+    main {
+      width: min(760px, calc(100% - 36px));
+      margin: 0 auto;
+      padding: 72px 0 96px;
+    }
+
+    header { margin-bottom: 64px; }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--accent);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      font-size: 13px;
+      font-weight: 650;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 680px;
+      margin: 0;
+      font-size: clamp(38px, 8vw, 64px);
+      font-weight: 650;
+      letter-spacing: -0.045em;
+      line-height: 1.14;
+    }
+
+    .lead {
+      max-width: 690px;
+      margin: 28px 0 0;
+      color: #45433f;
+      font-size: clamp(19px, 3vw, 23px);
+      line-height: 1.72;
+    }
+
+    .source {
+      margin-top: 30px;
+      padding: 18px 20px;
+      border-left: 3px solid var(--accent);
+      background: var(--accent-soft);
+      color: #3d4b47;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .source p { margin: 0; }
+
+    .incident {
+      margin: 0 0 64px;
+      padding: 28px 30px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 254, 250, 0.72);
+    }
+
+    .incident h2,
+    .checklist h2 {
+      margin: 0 0 14px;
+      font-size: 23px;
+      line-height: 1.4;
+    }
+
+    .incident p { margin: 10px 0 0; }
+
+    .rule {
+      display: grid;
+      grid-template-columns: 54px 1fr;
+      gap: 16px;
+      padding: 42px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .rule:last-of-type { border-bottom: 1px solid var(--line); }
+
+    .number {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .rule h2 {
+      margin: 0 0 12px;
+      font-size: clamp(23px, 4vw, 30px);
+      line-height: 1.35;
+    }
+
+    .rule p { margin: 0; }
+
+    .rule p + p { margin-top: 12px; }
+
+    .lesson {
+      color: var(--warning);
+      font-weight: 650;
+    }
+
+    .checklist {
+      margin-top: 72px;
+      padding: 30px;
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: 0 16px 46px rgba(52, 44, 30, 0.07);
+    }
+
+    .checklist p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      font-size: 15px;
+    }
+
+    .checklist ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .checklist li {
+      position: relative;
+      padding: 10px 0 10px 34px;
+    }
+
+    .checklist li::before {
+      position: absolute;
+      top: 16px;
+      left: 2px;
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid #99958c;
+      border-radius: 3px;
+      content: "";
+    }
+
+    footer {
+      margin-top: 64px;
+      color: var(--muted);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 560px) {
+      main { padding-top: 44px; }
+      header { margin-bottom: 44px; }
+      .incident, .checklist { padding: 22px; }
+      .rule {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 34px 0;
+      }
+      .number { width: 38px; height: 38px; }
+    }
+
+    @media print {
+      body { background: white; }
+      main { width: 100%; padding: 0; }
+      .source, .incident, .checklist { break-inside: avoid; }
+      .rule { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">事故补充 · VPS Security Notes</p>
+      <h1>《锁门》之外：<br>我们从事故里补出的 8 条规则</h1>
+      <p class="lead">这不是另一份 VPS 入门教程，也不重复端口、SSH、补丁和备份。这里只记录我们在网站被完整复制、内部服务意外暴露公网，以及后续安全复盘中真正踩出来的坑。</p>
+      <aside class="source">
+        <p>阅读顺序：请先看原教程 <a href="https://cunedi.uk/share/lockup.html" rel="noopener noreferrer">《锁门》</a>。它负责基础检查；这篇只补充事故之后才学会的部分。</p>
+      </aside>
+    </header>
+
+    <section class="incident" aria-labelledby="why">
+      <h2 id="why">为什么会有这份补充</h2>
+      <p>我们曾经以为“网页能正常打开、主要 API 已经鉴权、服务前面有防火墙”就已经足够。后来，一个公开站被完整复制；一个原本只供内部使用的服务被发现监听在公网；再后来，主 API 虽然锁住了，同一批私人数据却还能从另一条入口被匿名读取。</p>
+      <p>这些不是八个孤立的配置错误，而是八条应该长期成立的系统规则。</p>
+    </section>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">01</div>
+      <div>
+        <h2>默认前端一定会被完整复制</h2>
+        <p>浏览器能够显示的 HTML、脚本、图片和文字，就已经完整交到了访问者手里。禁用右键、代码混淆和禁止搜索引擎收录，都不能让公开页面变成私人页面。</p>
+        <p class="lesson">规则：公开作品与私人生活从构建阶段就分开；不愿被复制的内容，只能放在服务端鉴权之后。</p>
+      </div>
+    </article>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">02</div>
+      <div>
+        <h2>按“入口”审计，不按“服务”审计</h2>
+        <p>同一个功能可能同时经过不同域名、直接 IP、反向代理前缀和上游端口。锁住主 API，并不等于同一批数据没有从平行入口流出去。</p>
+        <p class="lesson">规则：为每个公网入口单独列账，并从服务器之外逐个进行匿名请求；不能只检查产品页面里看得见的那条路。</p>
+      </div>
+    </article>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">03</div>
+      <div>
+        <h2>鉴权级别由最终副作用决定</h2>
+        <p>GET 不保证只读。一个叫“状态”或“事件”的接口，背后仍可能写文件、调用付费模型、发送通知，甚至改变聊天记录。只按照请求方法划分风险，会漏掉最危险的入口。</p>
+        <p class="lesson">规则：沿着调用链看到最后；凡是会写入、花钱、通知他人或调用内部能力的请求，都按高危写操作保护。</p>
+      </div>
+    </article>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">04</div>
+      <div>
+        <h2>别让公网入口借服务器身份办事</h2>
+        <p>一个公开入口即使不直接泄露密钥，也可能使用服务器自己的高权限凭据，替匿名请求访问内部服务。这时门锁着，门房却在替陌生人开门。</p>
+        <p class="lesson">规则：只有真正限制在本机、并且不会被公网反代到的通道才能免鉴权；公网入口必须先确认调用者身份，再使用最小权限的独立凭据。</p>
+      </div>
+    </article>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">05</div>
+      <div>
+        <h2>失败请求会响，敏感的成功也要响</h2>
+        <p>401 和 403 只能说明有人撞到了锁。真正需要立刻处理的，往往是陌生来源从私人接口拿到了 200。只监控失败，会把已经进门的人当成一切正常。</p>
+        <p class="lesson">规则：同时监控敏感接口的异常 2xx、新来源成功、新监听端口，以及短时间内突然增加的高权限操作。</p>
+      </div>
+    </article>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">06</div>
+      <div>
+        <h2>密钥暴露后的动作是轮换，不是删除</h2>
+        <p>密钥一旦进入公开网页、URL、Git 或访问日志，就可能继续存在于浏览器历史、缓存、旧提交和备份里。把当前文件中的那一行删掉，并不能让已经出现过的值失效。</p>
+        <p class="lesson">规则：按“已经泄露”处理，先撤销并轮换，再清理历史残留；不同客户端使用可单独撤销、权限不同的令牌。</p>
+      </div>
+    </article>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">07</div>
+      <div>
+        <h2>相信正在运行的事实，不相信旧笔记</h2>
+        <p>服务可能换过进程管理器，端口可能被另一份旧进程占用，配置备份也可能因为留在自动加载目录而重新生效。文档写着什么，并不等于线上此刻运行什么。</p>
+        <p class="lesson">规则：变更前核对真实进程、父进程、监听地址和实际加载的配置；备份永远放在活目录之外。</p>
+      </div>
+    </article>
+
+    <article class="rule">
+      <div class="number" aria-hidden="true">08</div>
+      <div>
+        <h2>安全检查必须跟着系统一起变化</h2>
+        <p>一次通过的端口扫描，只能证明当时。系统更新、重启、迁移运行方式、增加反向代理或新增接口，都可能悄悄改变边界。</p>
+        <p class="lesson">规则：每次边界变更后，都从另一台机器重扫端口、匿名请求全部入口，并检查有没有新的意外 200。</p>
+      </div>
+    </article>
+
+    <section class="checklist" aria-labelledby="copy-list">
+      <h2 id="copy-list">可以直接抄走的增补清单</h2>
+      <p>基础锁门完成以后，再确认下面八件事。</p>
+      <ul>
+        <li>公开前端即使被完整复制，也不会带走私人内容、秘密或高价值能力。</li>
+        <li>域名、直接 IP、每个反代前缀和上游端口都做过外部匿名测试。</li>
+        <li>所有会写入、花钱、通知或调用内部能力的接口都按高危操作鉴权。</li>
+        <li>公网入口不能无条件借用服务器的高权限内部身份。</li>
+        <li>告警覆盖陌生来源的敏感 2xx，而不只覆盖 401 和 403。</li>
+        <li>进入过网页、URL、Git 或日志的密钥已经撤销并轮换。</li>
+        <li>进程、监听与加载配置以现场为准，备份文件不在活目录里。</li>
+        <li>每次部署、重启和边界变化后，都重新执行外部复检。</li>
+      </ul>
+    </section>
+
+    <footer>
+      <p>这份补充刻意隐去了真实域名、接口路径、IP、端口和令牌形式。分享事故，是为了让规则可以复用，不是为了把私人系统画成一张攻击地图。</p>
+      <p>整理于 2026 年 11 月。内容可自由引用；请同时保留对原教程的链接。</p>
+    </footer>
+  </main>
+</body>
+</html>
